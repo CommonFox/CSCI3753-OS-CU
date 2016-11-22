@@ -2,8 +2,6 @@
 Fox Maikovich
 foma2537
 9/24/16
-
-http://www.geeksforgeeks.org/scansets-in-c/
 */
 #include<stdio.h>
 #include<stdlib.h>
