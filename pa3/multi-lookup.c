@@ -25,6 +25,7 @@
 #define SBUFSIZE 1025
 #define INPUTFS "%1024s"
 
+pthread_cond_t cv; // Deducted points because conditional variable used to check if queue is full, but not empty
 queue q;
 pthread_mutex_t ql;
 pthread_mutex_t iol;
@@ -41,6 +42,7 @@ void* request(void* threadid){
     while(fscanf(inputfp, INPUTFS, hostname) > 0){
         int condition = 0; // Check if the locks are done
 
+        // If a thread tries to write to the queue but finds that it is full, it should sleep
         while(condition == 0) {
             pthread_mutex_lock(&ql); // Make sure only one can check on queue at a time
             if(queue_is_full(&q)) // Check if queue is full
@@ -54,6 +56,9 @@ void* request(void* threadid){
                 data = malloc(SBUFSIZE); // Allocate memory for the data
                 strncpy(data, hostname, SBUFSIZE);
                 queue_push(&q, data); // Push data to queue
+
+	        	pthread_cond_signal(&cv);
+
                 pthread_mutex_unlock(&ql); // Unlock to allow next thread to access the queue
                 condition = 1;
             }
@@ -68,8 +73,13 @@ void* request(void* threadid){
 void* resolve(){
     char* hostname; // Contains the hostname
     char firstipstr[INET6_ADDRSTRLEN]; //Contains resolved IP address
-
-    while(!queue_is_empty(&q) || !finished) { // finished determines if you have read all files or if the queue is not empty
+	
+    // instead of having to wait use cond variable to signal the thread that there is something new in the queue
+	if(queue_is_empty(&q)) {
+		pthread_cond_wait(&cv, &ql);
+	}
+  
+	while(!queue_is_empty(&q) || !finished) { // finished determines if you have read all files or if the queue is not empty
             pthread_mutex_lock(&ql); // lock the queue, each thread cannot point to the same item on the queue
             if(!queue_is_empty(&q)) // check if queue is empty
             {
@@ -114,10 +124,6 @@ int main(int argc, char* argv[]){
     pthread_t requesterThreads[argc-1]; //one for each file passed in as agrument
     pthread_t resolverThreads[10]; // Max amount of resolver threads
 
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
     /* Check Arguments */
     if(argc < MINARGS){
         fprintf(stderr, "Not enough arguments: %d\n", (argc - 1));
@@ -155,7 +161,7 @@ int main(int argc, char* argv[]){
     /* Loop Through Input Files */
     for(int i=1; i<(argc-1); i++){
         // each file gets a requester thread
-        int thr = pthread_create(&requesterThreads[i-1], &attr, request, argv[i]);
+        int thr = pthread_create(&requesterThreads[i-1], NULL, request, argv[i]);
         if(thr) {
             printf("Request thread error\n");
         }
@@ -163,11 +169,12 @@ int main(int argc, char* argv[]){
 
 	for(int i = 0; i < 10; ++i){
         // create 10 resolver threads
-        int thr = pthread_create(&resolverThreads[i], &attr, resolve, NULL);
+        int thr = pthread_create(&resolverThreads[i], NULL, resolve, NULL);
         if (thr) {
             printf("Resolver thread error\n");
         }
 	}
+finished = 1;
 
 	/* Join threads to signal if they're done, wait for threads to finish */
 	for(int i = 0; i < (argc-2); ++i)
@@ -178,7 +185,7 @@ int main(int argc, char* argv[]){
     		printf("Request thread broke");
     	}
     }
-    finished = 1;
+  
 
     /* Join on the resolver threads */
     for(int i = 0; i < 10; ++i)
