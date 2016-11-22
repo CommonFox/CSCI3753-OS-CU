@@ -50,7 +50,7 @@ static ssize_t char_read (struct file * file, char __user * user, size_t len, lo
 static ssize_t char_write (struct file * file, const char __user * user, size_t len, loff_t * lofft)
 {		
 	copy_from_user(message + messageSize, user, strlen(user));
-	messageSize = strlen(message);
+	messageSize = strlen(message); //deducted points for using strlen, can't use userspace functions
 
 	printk(KERN_ALERT "The size of the message is %d chracters\n", strlen(user));
 };
